@@ -230,7 +230,7 @@ def visualize_reconstructions(rbm, test_loader, device, n_samples=10):
         # Reconstructed image
         plt.subplot(2, n_samples, i + n_samples + 1)
         plt.imshow(v_prob[i].cpu().view(28, 28), cmap="gray")
-        plt.title("Reconstructed")
+        plt.title("Recon")
         plt.axis("off")
 
     plt.tight_layout()

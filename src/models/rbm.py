@@ -6,11 +6,10 @@ from typing import Optional, Dict, List
 
 
 class RBM(nn.Module):
-    def __init__(self, n_visible, n_hidden, device=None, training_method="cd"):
+    def __init__(self, n_visible, n_hidden, device=None):
         super(RBM, self).__init__()
         self.n_visible = n_visible
         self.n_hidden = n_hidden
-        self.training_method = training_method  # 'cd' or 'mle'
 
         if device is None:
             if torch.cuda.is_available():
@@ -135,6 +134,7 @@ class RBM(nn.Module):
         mcmc_steps=100,
         epochs=10,
         record_metrics: bool = True,
+        training_method="cd",
     ) -> Optional[Dict[str, List[float]]]:
         """
         Train the RBM using selected method and optionally monitor metrics.
@@ -154,7 +154,7 @@ class RBM(nn.Module):
             and 'recon_error' if record_metrics is True. Otherwise, returns None.
         """
         optimizer = torch.optim.SGD(self.parameters(), lr=lr)
-        training_method = self.training_method.lower()
+        training_method = training_method.lower()
 
         print(f"Training RBM using {training_method} method")
         training_loop = trange(epochs, desc="Initializing...")
