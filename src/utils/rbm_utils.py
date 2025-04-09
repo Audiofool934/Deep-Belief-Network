@@ -1,9 +1,10 @@
 import torch
-import torch.nn.functional as F
+from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import trange
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
+import math
 
 
 def binarize(x, threshold=0.5):
@@ -18,6 +19,26 @@ def binarize(x, threshold=0.5):
         Binary tensor of same shape as input
     """
     return (x > threshold).float()
+
+
+def MNIST():
+    # Define transformation
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+        ]
+    )
+
+    # Load MNIST dataset
+    train_dataset = datasets.MNIST(
+        root="../data", train=True, download=True, transform=transform
+    )
+
+    test_dataset = datasets.MNIST(
+        root="../data", train=False, download=True, transform=transform
+    )
+
+    return train_dataset, test_dataset
 
 
 class BinarizedDataLoader:
@@ -56,43 +77,104 @@ def visualize_training_history(history: Dict[str, List[float]]):
         not history
         or "epoch" not in history
         or "avg_free_energy" not in history
-        or "recon_error" not in history
+        or "recon_error_features" not in history
     ):
         print(
             "No training history available. Make sure record_metrics=True when calling train_rbm()."
         )
         return
 
-    # Create a figure with two subplots
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+    num_subplots = 2
+    if "recon_error_labels" in history:
+        num_subplots += 1
+    if "classification_accuracy" in history and not all(
+        torch.isnan(torch.tensor(history["classification_accuracy"]))
+    ):
+        num_subplots += 1
 
-    # Plot 1: Free Energy
-    ax1.plot(history["epoch"], history["avg_free_energy"], "b-", marker="o")
-    ax1.set_xlabel("Epoch")
-    ax1.set_ylabel("Average Free Energy")
-    ax1.set_title("Free Energy vs. Epoch")
-    ax1.grid(True, linestyle="--", alpha=0.7)
+    fig, axes = plt.subplots(1, num_subplots, figsize=(5 * num_subplots, 5))
 
-    # Plot 2: Reconstruction Error
-    ax2.plot(history["epoch"], history["recon_error"], "r-", marker="o")
-    ax2.set_xlabel("Epoch")
-    ax2.set_ylabel("Reconstruction Error (MSE)")
-    ax2.set_title("Reconstruction Error vs. Epoch")
-    ax2.grid(True, linestyle="--", alpha=0.7)
+    ax_index = 0
 
-    # Add a summary table with numeric values
-    print("Training History Summary:")
-    print(f"{'Epoch':<10}{'Free Energy':<20}{'Reconstruction Error':<20}")
-    print("-" * 50)
-    for i, epoch in enumerate(history["epoch"]):
-        print(
-            f"{epoch:<10}{history['avg_free_energy'][i]:<20.4f}{history['recon_error'][i]:<20.4f}"
+    axes[ax_index].plot(history["epoch"], history["avg_free_energy"], "b-", marker="o")
+    axes[ax_index].set_xlabel("Epoch")
+    axes[ax_index].set_ylabel("Average Free Energy")
+    axes[ax_index].set_title("Free Energy vs. Epoch")
+    axes[ax_index].grid(True, linestyle="--", alpha=0.7)
+    ax_index += 1
+
+    axes[ax_index].plot(
+        history["epoch"], history["recon_error_features"], "r-", marker="o"
+    )
+    axes[ax_index].set_xlabel("Epoch")
+    axes[ax_index].set_ylabel("Reconstruction Error (MSE) - Features")
+    axes[ax_index].set_title("Feature Reconstruction Error vs. Epoch")
+    axes[ax_index].grid(True, linestyle="--", alpha=0.7)
+    ax_index += 1
+
+    if "recon_error_labels" in history:
+        axes[ax_index].plot(
+            history["epoch"], history["recon_error_labels"], "g-", marker="o"
         )
+        axes[ax_index].set_xlabel("Epoch")
+        axes[ax_index].set_ylabel("Reconstruction Error (MSE) - Labels")
+        axes[ax_index].set_title("Label Reconstruction Error vs. Epoch")
+        axes[ax_index].grid(True, linestyle="--", alpha=0.7)
+        ax_index += 1
+
+    if "classification_accuracy" in history and not all(
+        torch.isnan(torch.tensor(history["classification_accuracy"]))
+    ):
+        valid_accuracy = [
+            acc
+            for acc in history["classification_accuracy"]
+            if not torch.isnan(torch.tensor(acc))
+        ]
+        valid_epochs = [
+            epoch
+            for epoch, acc in zip(history["epoch"], history["classification_accuracy"])
+            if not torch.isnan(torch.tensor(acc))
+        ]
+        axes[ax_index].plot(valid_epochs, valid_accuracy, "m-", marker="o")
+        axes[ax_index].set_xlabel("Epoch")
+        axes[ax_index].set_ylabel("Classification Accuracy (%)")
+        axes[ax_index].set_title("Classification Accuracy vs. Epoch")
+        axes[ax_index].grid(True, linestyle="--", alpha=0.7)
+
+    print("Training History Summary:")
+    header = f"{'Epoch':<10}{'Free Energy':<20}{'Recon Err (Feat)':<20}"
+    if "recon_error_labels" in history:
+        header += f"{'Recon Err (Lbl)':<20}"
+    if "classification_accuracy" in history:
+        header += f"{'Classification Acc':<20}"
+    print(header)
+    print(
+        "-"
+        * (
+            10
+            + 20
+            * (
+                2
+                + ("recon_error_labels" in history)
+                + ("classification_accuracy" in history)
+            )
+        )
+    )
+    for i, epoch in enumerate(history["epoch"]):
+        if i % 5 == 0:
+            row = f"{epoch:<10}{history['avg_free_energy'][i]:<20.4f}{history['recon_error_features'][i]:<20.4f}"
+            if "recon_error_labels" in history:
+                row += f"{history['recon_error_labels'][i]:<20.4f}"
+            if "classification_accuracy" in history:
+                if torch.isnan(torch.tensor(history["classification_accuracy"][i])):
+                    row += f"{'N/A':<20}"
+                else:
+                    row += f"{history['classification_accuracy'][i]:<20.2f}"
+            print(row)
 
     plt.tight_layout()
     plt.show()
 
-    # Calculate improvements
     if len(history["epoch"]) > 1:
         fe_improvement = (
             (
@@ -103,19 +185,48 @@ def visualize_training_history(history: Dict[str, List[float]]):
             if history["avg_free_energy"][0] != 0
             else 0
         )
-        re_improvement = (
+        re_improvement_features = (
             (
-                (history["recon_error"][0] - history["recon_error"][-1])
-                / history["recon_error"][0]
+                (
+                    history["recon_error_features"][0]
+                    - history["recon_error_features"][-1]
+                )
+                / history["recon_error_features"][0]
             )
             * 100
-            if history["recon_error"][0] != 0
+            if history["recon_error_features"][0] != 0
             else 0
         )
 
         print(f"\nOverall Improvements:")
         print(f"Free Energy: {fe_improvement:.2f}%")
-        print(f"Reconstruction Error: {re_improvement:.2f}%")
+        print(f"Reconstruction Error (Features): {re_improvement_features:.2f}%")
+
+        if "recon_error_labels" in history:
+            re_improvement_labels = (
+                (
+                    (
+                        history["recon_error_labels"][0]
+                        - history["recon_error_labels"][-1]
+                    )
+                    / history["recon_error_labels"][0]
+                )
+                * 100
+                if history["recon_error_labels"][0] != 0
+                else 0
+            )
+            print(f"Reconstruction Error (Labels): {re_improvement_labels:.2f}%")
+
+        if "classification_accuracy" in history and not all(
+            torch.isnan(torch.tensor(history["classification_accuracy"]))
+        ):
+            valid_accuracy = [
+                acc
+                for acc in history["classification_accuracy"]
+                if not torch.isnan(torch.tensor(acc))
+            ]
+            acc_improvement = valid_accuracy[-1] - valid_accuracy[0]
+            print(f"Classification Accuracy: {acc_improvement:.2f}%")
 
 
 def visualize_weights(
@@ -203,33 +314,28 @@ def visualize_reconstructions(rbm, test_loader, device, n_samples=10):
         device: Device to use for computations
         n_samples: Number of samples to visualize
     """
-    # Get some test images
-    test_batch = next(iter(test_loader))
-    test_images = test_batch[0][:n_samples].view(-1, rbm.n_visible).to(device)
-    test_labels = test_batch[1][:n_samples]
 
-    # Binarize the images
-    binary_test_images = binarize(test_images)
+    # Get some test images
+    features, labels = next(iter(test_loader))
+    v_input = rbm.prepare_input_data(features, labels)
 
     # Reconstruct images
     with torch.no_grad():
-        # Get hidden activation probabilities
-        h_prob, h_sample = rbm.sample_h(binary_test_images)
-        # Reconstruct from hidden activations
-        v_prob, v_sample = rbm.sample_v(h_sample)
+        v_prob = rbm.forward(v_input)
+        v_recon_features = v_prob[:, : rbm.n_visible_features]
 
     # Visualize original and reconstructed images
     plt.figure(figsize=(12, 6))
     for i in range(n_samples):
         # Original image
         plt.subplot(2, n_samples, i + 1)
-        plt.imshow(binary_test_images[i].cpu().view(28, 28), cmap="gray")
-        plt.title(f"Original: {test_labels[i]}")
+        plt.imshow(features[i].cpu().view(28, 28), cmap="gray")
+        plt.title(f"Original: {labels[i]}")
         plt.axis("off")
 
         # Reconstructed image
         plt.subplot(2, n_samples, i + n_samples + 1)
-        plt.imshow(v_prob[i].cpu().view(28, 28), cmap="gray")
+        plt.imshow(v_recon_features[i].cpu().view(28, 28), cmap="gray")
         plt.title("Recon")
         plt.axis("off")
 

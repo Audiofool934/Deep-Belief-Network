@@ -1,6 +1,7 @@
 # Export all utilities from rbm_utils
 from .rbm_utils import (
     binarize,
+    MNIST,
     BinarizedDataLoader,
     visualize_training_history,
     visualize_weights,
