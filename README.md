@@ -1,5 +1,9 @@
 # Deep Belief Network
 
+<div align="center">
+--- 🏗️ work in progress 🏗️ ---
+</div>
+
 ## Overview
 
 <!-- First, we'll implement RBM(Restricted Boltzmann Machine) and then use it to build a Deep Belief Network (DBN). -->
@@ -10,7 +14,11 @@
 
 ## Training
 
-### MLE and CD-k
+### MLE(MCMC), CD, and PCD
+
+- [x] Maximum Likelihood Estimation (MLE) using MCMC
+- [x] Contrastive Divergence (CD)
+- [ ] Persistent Contrastive Divergence (PCD)
 
 ## As a Generative Model
 
